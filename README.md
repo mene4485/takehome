@@ -21,6 +21,8 @@ The chatbot must be able to call the two tools defined in `backend/services/tool
 - **Cat Fact** (`get_cat_fact`): Fetches a random cat fact from an external API
 - **Calculator** (`calculate_expression`): Evaluates mathematical expressions
 
+> **Tip:** Once the backend is running, visit **http://localhost:8000/docs** to explore the interactive API documentation. You can test both tool functions directly from the Swagger UI to understand how they work.
+
 #### 3. Sequential Tool Calling
 The chatbot should handle multi-step tasks that require calling tools in sequence. For example:
 
