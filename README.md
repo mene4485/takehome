@@ -51,7 +51,7 @@ All of this should happen in a single conversational turn.
 
 ```bash
 # Fork this repo on GitHub, then clone your fork
-git clone https://github.com/YOUR_USERNAME/takehome.git
+git clone https://github.com/getstructured-ai/takehome.git
 cd takehome
 ```
 
