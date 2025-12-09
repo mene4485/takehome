@@ -151,9 +151,19 @@ npm run dev
 
 ---
 
+# Submission
+
+Once you've completed the challenge, please book a time to for me to review your work together:
+
+**[Schedule Takehome Call](https://calendly.com/brandon-getstructured/60-minute-meeting)**
+
+This call will be a chance for you to show off what you built. I will ask questions about your code choices and I will ask you to extend your code to do an extra task.
+
+---
+
 # Final Thoughts
 
-We designed this challenge to reflect real work you’d do at Structured:
+We designed this challenge to reflect real work you'd do at Structured:
 agentic systems, tool orchestration, async Python, and thoughtful UI/UX.
 
 Good luck, and have fun with it!
