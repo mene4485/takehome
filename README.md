@@ -1,169 +1,79 @@
-# Structured Take-Home Challenge
+# Mission Control - Take-Home Challenge
 
-**Build an agentic chatbot that can think, plan, and use tools.**
-
-This exercise is intentionally scoped to be achievable within a few focused hours, but it touches the same patterns we use in production: **tool-using LLMs, async backend flows, clean persistence, and a polished user experience.**
-
----
-
-## What You’ll Build
-
-A small **React + FastAPI** application where a user can chat with an AI assistant that:
-
-* Remembers conversation history
-* Uses a **set of tools** to accomplish tasks
-* Can chain tools together in multi-step, reasoning-heavy sequences
-* Presents everything cleanly on a modern frontend
-
-You don’t need to build login, auth, or multi-tenant logic. Just focus on the core agentic workflow. All scaffolding for backend, frontend, and SQLite persistence is provided to make setup smooth.
-
-If anything is unclear, feel free to reach out: **[brandon@getstructured.ai](mailto:brandon@getstructured.ai)**.
-
-Because this is a simplified environment, assume only a single user will be using the system. Still, **make your backend async**, as if multiple requests *could* come in concurrently.
+Anthropic's recently released Programmatic Tool Calling (PTC) is quite powerful.
+You're goal is to utilize this new tool to build an AI Operations Assistant.
 
 ---
 
 ## Requirements
 
-### 1. **Conversational Experience & Persistence**
+### 1. Implement Programmatic Tool Calling
 
-Your chatbot should be able to:
+Connect the chat to Claude with PTC enabled. When Claude writes code that calls tools, route those calls to your backend and return results to the sandbox.
 
-* Chat naturally with the user
-* Persist all messages to the provided SQLite database
-* Display the list of previous conversations
-* Allow the user to reopen and continue a past conversation
+See `backend/services/tools.py` for 3 starter tools with `allowed_callers` already configured.
 
-This mimics the baseline experience in our real product.
+**Docs:** [Programmatic Tool Calling](https://platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling)
 
----
+### 2. Real-Time Visualization
 
-### 2. **Tool Integration**
+Stream tool execution to the frontend. Users should see:
+- When Claude writes code vs calls tools directly
+- If Claude writes code we should see this code
+- Each tool call as it happens (not after completion)
+- Intermediate results and the final response
 
-Your agent must be able to use the two tool functions already implemented in
-`backend/services/tools.py`:
+You don't have to stream individual tokens (though bonus if you can). The idea here is that the user should see what's happening as the agent thinks rather than waiting a few minutes to receive a massive chunk of text.
 
-* **Cat Fact Tool — `get_cat_fact()`**
-  Fetches a random cat fact from an external API.
+### 3. Conversation Context
 
-* **Calculator Tool — `calculate_expression()`**
-  Evaluates a mathematical expression.
+The agent should handle follow-up questions correctly. If I ask "List P0 incidents" then follow up with "Who's assigned to the first one?", the agent should understand the context.
 
-**Pro tip:**
-Once your backend is running, visit **[http://localhost:8000/docs](http://localhost:8000/docs)** (Swagger UI).
-You can test both tools directly and understand the expected inputs and outputs.
+### 4. Chat History
 
----
+- Create new conversations
+- Return to previous conversations
+- Persist messages to the database (SQLite + SQLAlchemy already configured)
 
-### 3. **Sequential / Multi-Step Tool Calling**
+### 5. Build Tools to Answer These Questions
 
-Your agent should be able to handle tasks that require multiple tools in order.
+Your agent should correctly answer all of these:
 
-Example prompt:
+| Question | Hints |
+|----------|-------|
+| "Which departments are over budget?" | Need budget data |
+| "What projects have declining customer satisfaction?" | Need feedback/NPS data |
+| "List engineers with unresolved P1+ incidents and their managers" | Correlate team + incidents |
+| "Which project has the worst incident-to-deployment ratio?" | Need deployment data |
+| "Create a summary of infrastructure issues this month" | Filter + aggregate incidents |
 
-> “Get me a cat fact, count the number of words in it, and then use the calculator to divide that count by 7.”
-
-Correct behavior:
-
-1. Call the cat fact tool
-2. Count the number of words
-3. Call the calculator tool with the result
-4. Return the final output to the user
-
-All within a **single conversational turn**.
-This is the kind of reasoning-layer orchestration we build internally every day.
+Look at `backend/data/mock_data.py` - there's data for budgets, customer feedback, and deployments that don't have tools yet. **You decide what tools to build.**
 
 ---
 
-## Notes & Expectations
-
-* You can use *any* LLM provider (OpenAI, Anthropic, etc.)
-* Feel free to bring in additional dependencies if they help
-* SQLAlchemy is already configured — please use it for persistence
-* Tools for the challenge are in `backend/services/tools.py`
-* Clean, readable code and a pleasant UI go a long way
-
----
-
-# 🛠️ Setup Instructions
-
-### 1. Fork & Clone the Repo
-
-```bash
-# Fork the repo on GitHub, then clone your fork
-git clone https://github.com/getstructured-ai/takehome.git
-cd takehome
-```
-
----
-
-### 2. Configure Environment Variables
+## Getting Started
 
 ```bash
 # Backend
-cp backend/.env.example backend/.env
-
-# Frontend
-cp frontend/.env.example frontend/.env
-```
-
-Add the API keys provided in your email (OpenAI & Anthropic) to `backend/.env`.
-
-If something is missing, just email **[brandon@getstructured.ai](mailto:brandon@getstructured.ai)**.
-
----
-
-### 3. Install Dependencies
-
-**Backend** (requires [uv](https://docs.astral.sh/uv/)):
-
-```bash
 cd backend
+cp .env.example .env  # Add your Anthropic API key from Structured AI
 uv sync
-```
-
-**Frontend** (requires Node.js):
-
-```bash
-cd frontend
-npm install
-```
-
----
-
-### 4. Run the App
-
-Start backend & frontend in separate terminals.
-
-**Backend** ([http://localhost:8000](http://localhost:8000)):
-
-```bash
-cd backend
 uv run uvicorn main:app --reload
-```
 
-**Frontend** ([http://localhost:5173](http://localhost:5173)):
-
-```bash
+# Frontend (separate terminal)
 cd frontend
+cp .env.example .env
+npm install
 npm run dev
 ```
 
----
-
-# Submission
-
-Once you've completed the challenge, please book a time to for me to review your work together:
-
-**[Schedule Takehome Call](https://calendly.com/brandon-getstructured/60-minute-meeting)**
-
-This call will be a chance for you to show off what you built. I will ask questions about your code choices and I will ask you to extend your code to do an extra task.
+- Frontend: http://localhost:5173
+- API Docs: http://localhost:8000/docs
 
 ---
 
-# Final Thoughts
+## Submission
 
-We designed this challenge to reflect real work you'd do at Structured:
-agentic systems, tool orchestration, async Python, and thoughtful UI/UX.
+**[Schedule Review Call](https://calendly.com/brandon-getstructured/60-minute-meeting)**
 
-Good luck, and have fun with it!
+Questions? Email **brandon@getstructured.ai**
