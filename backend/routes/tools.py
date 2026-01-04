@@ -14,6 +14,9 @@ from services.tools import (
     tool_get_team_members,
     tool_get_projects,
     tool_get_incidents,
+    tool_get_budgets,
+    tool_get_customer_feedback,
+    tool_get_deployments,
     TOOL_DEFINITIONS,
 )
 
@@ -55,3 +58,31 @@ async def get_incidents(
     """Get incidents, optionally filtered by status and/or severity."""
     incidents = await tool_get_incidents(status, severity)
     return {"data": incidents, "count": len(incidents)}
+
+
+@router.get("/budgets")
+async def get_budgets(
+    department: Optional[str] = Query(None, description="Filter by department")
+):
+    """Get budget data by department."""
+    budgets = await tool_get_budgets(department)
+    return {"data": budgets}
+
+
+@router.get("/customer-feedback")
+async def get_customer_feedback(
+    project_id: Optional[str] = Query(None, description="Filter by project")
+):
+    """Get customer satisfaction scores and feedback per project."""
+    feedback = await tool_get_customer_feedback(project_id)
+    return {"data": feedback}
+
+
+@router.get("/deployments")
+async def get_deployments(
+    project_id: Optional[str] = Query(None, description="Filter by project"),
+    status: Optional[str] = Query(None, description="Filter by status")
+):
+    """Get deployment history with optional filters."""
+    deployments = await tool_get_deployments(project_id, status)
+    return {"data": deployments, "count": len(deployments)}

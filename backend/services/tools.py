@@ -8,7 +8,7 @@ You will need to design and implement additional tools to complete the challenge
 Hint: Look at the mock data in data/mock_data.py to see what other data is available.
 """
 
-from data.mock_data import get_team_members, get_projects, get_incidents
+from data.mock_data import get_team_members, get_projects, get_incidents, get_budgets, get_customer_feedback, get_deployments
 
 
 # =============================================================================
@@ -64,6 +64,60 @@ async def tool_get_incidents(
         assigned_to, created_at, resolved_at, service
     """
     return get_incidents(status, severity)
+
+
+# =============================================================================
+# TOOL 4: Get Budgets
+# =============================================================================
+async def tool_get_budgets(department: str | None = None) -> dict:
+    """
+    Retrieve budget data from Structured AI.
+
+    Args:
+        department: Optional filter by department.
+                   Valid values: "engineering", "product", "design", "data", "infrastructure"
+
+    Returns:
+        Dictionary of budget objects with allocated, spent, q1_spent, q2_spent, q3_spent, q4_spent
+    """
+    return get_budgets(department)
+
+
+# =============================================================================
+# TOOL 5: Get Customer Feedback
+# =============================================================================
+async def tool_get_customer_feedback(project_id: str | None = None) -> dict:
+    """
+    Retrieve customer satisfaction data from Structured AI.
+
+    Args:
+        project_id: Optional filter by project ID (e.g., "proj_001")
+
+    Returns:
+        Dictionary of feedback objects with nps, responses, trend, recent_comments
+    """
+    return get_customer_feedback(project_id)
+
+
+# =============================================================================
+# TOOL 6: Get Deployments
+# =============================================================================
+async def tool_get_deployments(
+    project_id: str | None = None,
+    status: str | None = None
+) -> list[dict]:
+    """
+    Retrieve deployment history from Structured AI.
+
+    Args:
+        project_id: Optional filter by project ID
+        status: Optional filter by status. Valid values: "success", "failed"
+
+    Returns:
+        List of deployment objects with id, project_id, version, deployed_by,
+        deployed_at, status, rollback, environment
+    """
+    return get_deployments(project_id, status)
 
 
 # =============================================================================
@@ -126,6 +180,57 @@ TOOL_DEFINITIONS = [
             "required": []
         },
         "allowed_callers": ["code_execution_20250825"]
+    },
+    {
+        "name": "get_budgets",
+        "description": "Get budget allocation and spending data by department from Structured AI. Returns budget information including allocated amounts, spent amounts, and quarterly spending breakdown.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "department": {
+                    "type": "string",
+                    "description": "Filter by department: engineering, product, design, data, or infrastructure",
+                    "enum": ["engineering", "product", "design", "data", "infrastructure"]
+                }
+            },
+            "required": []
+        },
+        "allowed_callers": ["code_execution_20250825"]
+    },
+    {
+        "name": "get_customer_feedback",
+        "description": "Get customer satisfaction and NPS scores per project from Structured AI. Returns NPS scores, response counts, satisfaction trends, and recent customer comments.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Filter by project ID (e.g., 'proj_001')"
+                }
+            },
+            "required": []
+        },
+        "allowed_callers": ["code_execution_20250825"]
+    },
+    {
+        "name": "get_deployments",
+        "description": "Get deployment history from Structured AI with optional filters for project and status. Returns deployment records with version, status, timestamp, and rollback information.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_id": {
+                    "type": "string",
+                    "description": "Filter by project ID"
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Filter by deployment status",
+                    "enum": ["success", "failed"]
+                }
+            },
+            "required": []
+        },
+        "allowed_callers": ["code_execution_20250825"]
     }
 ]
 
@@ -134,4 +239,7 @@ TOOL_HANDLERS = {
     "get_team_members": tool_get_team_members,
     "get_projects": tool_get_projects,
     "get_incidents": tool_get_incidents,
+    "get_budgets": tool_get_budgets,
+    "get_customer_feedback": tool_get_customer_feedback,
+    "get_deployments": tool_get_deployments,
 }

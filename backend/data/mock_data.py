@@ -188,6 +188,8 @@ def generate_deployments():
 DEPLOYMENTS = generate_deployments()
 
 
+
+
 def get_team_members(department: str | None = None) -> list[dict]:
     """Get team members, optionally filtered by department."""
     if department:
@@ -209,4 +211,28 @@ def get_incidents(status: str | None = None, severity: str | None = None) -> lis
         results = [i for i in results if i["status"] == status.lower()]
     if severity:
         results = [i for i in results if i["severity"] == severity.upper()]
+    return results
+
+
+def get_budgets(department: str | None = None) -> dict:
+    """Get budget data, optionally filtered by department."""
+    if department:
+        return {department.lower(): BUDGETS[department.lower()]}
+    return BUDGETS
+
+
+def get_customer_feedback(project_id: str | None = None) -> dict:
+    """Get customer satisfaction data, optionally filtered by project."""
+    if project_id:
+        return {project_id: CUSTOMER_FEEDBACK[project_id]}
+    return CUSTOMER_FEEDBACK
+
+
+def get_deployments(project_id: str | None = None, status: str | None = None) -> list[dict]:
+    """Get deployments, optionally filtered by project and/or status."""
+    results = DEPLOYMENTS
+    if project_id:
+        results = [d for d in results if d["project_id"] == project_id]
+    if status:
+        results = [d for d in results if d["status"] == status.lower()]
     return results
