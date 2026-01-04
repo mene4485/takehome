@@ -6,9 +6,30 @@ This module tests all conversation and message endpoints including
 creating, retrieving, listing, and deleting conversations and messages.
 """
 import time
+import os
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from main import app
-from db import SessionLocal, Conversation, Message
+from db import Base, get_db, Conversation, Message
+
+# Use a separate test database
+TEST_DATABASE_URL = "sqlite:///./test.db"
+engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Override the get_db dependency to use test database
+def override_get_db():
+    try:
+        db = TestingSessionLocal()
+        yield db
+    finally:
+        db.close()
+
+app.dependency_overrides[get_db] = override_get_db
+
+# Create test database tables
+Base.metadata.create_all(bind=engine)
 
 client = TestClient(app)
 
@@ -267,7 +288,7 @@ def test_delete_cascades_messages():
     assert get_response.status_code == 404
     
     # Double-check in database that messages are deleted
-    db = SessionLocal()
+    db = TestingSessionLocal()
     try:
         messages = db.query(Message).filter(
             Message.conversation_id == conversation_id
