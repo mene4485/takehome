@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db import init_db
 from routes.tools import router as tools_router
+from routes.conversations import router as conversations_router
 
 load_dotenv()
 
@@ -27,6 +28,7 @@ app.add_middleware(
 )
 
 app.include_router(tools_router)
+app.include_router(conversations_router)
 
 
 @app.get("/")
