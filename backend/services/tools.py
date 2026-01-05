@@ -130,7 +130,7 @@ TOOL_DEFINITIONS = [
     {
         "type": "custom",
         "name": "get_team_members",
-        "description": "Get team members from Structured AI, optionally filtered by department. Returns a JSON string containing an array of employee objects with fields: id, name, email, department, role, level, and manager_id. Parse with json.loads().",
+        "description": "Get team members from Structured AI, optionally filtered by department. Returns a list of employee dictionaries with fields: id, name, email, department, role, level, and manager_id.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -147,7 +147,7 @@ TOOL_DEFINITIONS = [
     {
         "type": "custom",
         "name": "get_projects",
-        "description": "Get projects from Structured AI, optionally filtered by team. Returns a JSON string containing an array of project objects with fields: id, name, team_id, lead_id, status, and started_at. Parse with json.loads().",
+        "description": "Get projects from Structured AI, optionally filtered by team. Returns a list of project dictionaries with fields: id, name, team_id, lead_id, status, and started_at.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -164,7 +164,7 @@ TOOL_DEFINITIONS = [
     {
         "type": "custom",
         "name": "get_incidents",
-        "description": "Get incident reports from Structured AI, optionally filtered by status and/or severity. Returns a JSON string containing an array of incident objects with fields: id, title, severity, status, project_id, assigned_to, created_at, resolved_at, and service. Parse with json.loads().",
+        "description": "Get incident reports from Structured AI, optionally filtered by status and/or severity. Returns a list of incident dictionaries with fields: id, title, severity, status, project_id, assigned_to, created_at, resolved_at, and service.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -186,7 +186,7 @@ TOOL_DEFINITIONS = [
     {
         "type": "custom",
         "name": "get_budgets",
-        "description": "Get budget allocation and spending data by department from Structured AI. Returns a JSON string containing a dictionary mapping department names to budget objects with fields: allocated, spent, q1_spent, q2_spent, q3_spent, q4_spent. Parse with json.loads().",
+        "description": "Get budget allocation and spending data by department from Structured AI. Returns a dictionary mapping department names (string) to budget objects with fields: allocated, spent, q1_spent, q2_spent, q3_spent, q4_spent (all integers).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -203,7 +203,7 @@ TOOL_DEFINITIONS = [
     {
         "type": "custom",
         "name": "get_customer_feedback",
-        "description": "Get customer satisfaction and NPS scores per project from Structured AI. Returns a JSON string containing feedback objects with fields: project_id, nps_score, response_count, satisfaction_trend, and recent_comments array. Parse with json.loads().",
+        "description": "Get customer satisfaction and NPS scores per project from Structured AI. Returns a dictionary mapping project IDs (string) to feedback objects with fields: nps (integer), responses (integer), trend (string: 'improving'/'stable'/'declining'), and recent_comments (list of comment objects).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -219,7 +219,7 @@ TOOL_DEFINITIONS = [
     {
         "type": "custom",
         "name": "get_deployments",
-        "description": "Get deployment history from Structured AI with optional filters for project and status. Returns a JSON string containing an array of deployment objects with fields: id, project_id, version, status, deployed_at, deployed_by, and rollback_from_version. Parse with json.loads().",
+        "description": "Get deployment history from Structured AI with optional filters for project and status. Returns a list of deployment dictionaries with fields: id, project_id, version, status, deployed_at, deployed_by, and rollback_from_version.",
         "input_schema": {
             "type": "object",
             "properties": {
