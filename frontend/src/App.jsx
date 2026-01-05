@@ -35,7 +35,6 @@ const apiUrl = import.meta.env.VITE_API_URL;
 function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const [stats, setStats] = useState(null);
   const [codeExecution, setCodeExecution] = useState(null);
   const messagesScrollRef = useRef(null);
@@ -45,6 +44,12 @@ function App() {
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
+
+  // Streaming state management
+  const [streamingEvents, setStreamingEvents] = useState([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingStatus, setStreamingStatus] = useState(null);
+  const [containerIds, setContainerIds] = useState({});
 
   // Fetch initial stats and conversations
   useEffect(() => {
@@ -170,7 +175,7 @@ function App() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isStreaming) return;
 
     const userMessage = { role: "user", content: input.trim() };
     const inputText = input.trim();
@@ -178,7 +183,9 @@ function App() {
     // Add user message to UI immediately
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
-    setIsLoading(true);
+    setIsStreaming(true);
+    setStreamingEvents([]);
+    setStreamingStatus("thinking");
     setCodeExecution(null);
 
     try {
@@ -190,7 +197,7 @@ function App() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            title: inputText.slice(0, 50), // Use first message as title
+            title: inputText.slice(0, 50),
           }),
         });
         const newConversation = await createResponse.json();
@@ -220,53 +227,113 @@ function App() {
         }),
       });
 
-      // Call Claude AI via chat endpoint
-      const chatResponse = await fetch(`${apiUrl}/chat/`, {
+      // Use fetch to stream events from Claude
+      const response = await fetch(`${apiUrl}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: inputText,
           conversation_id: conversationId,
+          container_id: containerIds[conversationId] || null,
         }),
       });
 
-      if (!chatResponse.ok) {
-        throw new Error(`Chat API error: ${chatResponse.status}`);
+      if (!response.ok) {
+        throw new Error(`Streaming API error: ${response.status}`);
       }
 
-      const chatData = await chatResponse.json();
+      // Read the stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      // Add Claude's response to UI
-      const assistantMessage = {
-        role: "assistant",
-        content: chatData.response,
-        id: chatData.message_id,
-      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      setMessages((prev) => [...prev, assistantMessage]);
+        // Decode chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true });
 
-      // Update conversation's updated_at by moving it to top of list
-      setConversations((prev) => {
-        const updated = prev.map((c) =>
-          c.id === conversationId
-            ? {
-                ...c,
-                updated_at: new Date().toISOString(),
-                message_count: c.message_count + 2,
+        // Process complete SSE messages (separated by \n\n)
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || ""; // Keep incomplete message in buffer
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const eventData = JSON.parse(line.slice(6));
+
+              // Handle different event types
+              if (eventData.type === "thinking") {
+                setStreamingStatus("thinking");
+              } else if (eventData.type === "code") {
+                setStreamingStatus("writing_code");
+              } else if (eventData.type === "tool_call") {
+                setStreamingEvents((prev) => [
+                  ...prev,
+                  { ...eventData, id: `${eventData.tool_name}-${Date.now()}` },
+                ]);
+                setStreamingStatus("calling_tools");
+              } else if (eventData.type === "tool_result") {
+                // Update existing tool call status
+                setStreamingEvents((prev) =>
+                  prev.map((evt) =>
+                    evt.tool_name === eventData.tool_name &&
+                    evt.status === "running"
+                      ? { ...evt, status: eventData.status }
+                      : evt
+                  )
+                );
+              } else if (eventData.type === "response") {
+                // Final response - add to messages
+                const assistantMessage = {
+                  role: "assistant",
+                  content: eventData.content,
+                };
+                setMessages((prev) => [...prev, assistantMessage]);
+
+                // Store container_id for reuse
+                if (eventData.container_id) {
+                  setContainerIds((prev) => ({
+                    ...prev,
+                    [conversationId]: eventData.container_id,
+                  }));
+                }
+
+                // Update conversation's updated_at
+                setConversations((prev) => {
+                  const updated = prev.map((c) =>
+                    c.id === conversationId
+                      ? {
+                          ...c,
+                          updated_at: new Date().toISOString(),
+                          message_count: c.message_count + 2,
+                        }
+                      : c
+                  );
+                  return updated.sort(
+                    (a, b) => new Date(b.updated_at) - new Date(a.updated_at)
+                  );
+                });
+              } else if (eventData.type === "error") {
+                throw new Error(eventData.error || "Unknown error");
               }
-            : c
-        );
-        return updated.sort(
-          (a, b) => new Date(b.updated_at) - new Date(a.updated_at)
-        );
-      });
+            } catch (parseError) {
+              console.error("Failed to parse SSE event:", parseError);
+            }
+          }
+        }
+      }
+
+      // Close reader
+      reader.releaseLock();
     } catch (err) {
       console.error("Failed to send message:", err);
 
       // Provide more specific error message
       let errorMessage =
         "❌ Failed to send message. Please check that the backend server is running and try again.";
-      if (err.message.includes("Chat API error")) {
+      if (err.message.includes("Streaming API error")) {
         errorMessage =
           "❌ Claude AI is temporarily unavailable. Please try again in a moment.";
       }
@@ -279,7 +346,9 @@ function App() {
         },
       ]);
     } finally {
-      setIsLoading(false);
+      setIsStreaming(false);
+      setStreamingEvents([]);
+      setStreamingStatus(null);
     }
   };
 
@@ -413,16 +482,78 @@ function App() {
                       </div>
                     ))}
 
-                    {isLoading && (
+                    {isStreaming && (
                       <div className="flex gap-3">
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
                           <Bot className="w-4 h-4 text-white" />
                         </div>
-                        <div className="bg-secondary rounded-lg px-4 py-3 flex items-center gap-2">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span className="text-sm text-muted-foreground">
-                            Claude is thinking...
-                          </span>
+                        <div className="bg-secondary rounded-lg px-4 py-3 border-l-4 border-violet-500 transition-all duration-300">
+                          {/* Streaming status */}
+                          {streamingStatus === "thinking" && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse">
+                              <span>🤔</span>
+                              <span>Analyzing your question...</span>
+                            </div>
+                          )}
+
+                          {streamingStatus === "writing_code" && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse mb-2">
+                              <span>📝</span>
+                              <span>
+                                Writing code to process your request...
+                              </span>
+                            </div>
+                          )}
+
+                          {streamingStatus === "calling_tools" &&
+                            streamingEvents.length > 0 && (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                                  <Code2 className="w-3 h-3" />
+                                  <span>Executing tools...</span>
+                                </div>
+                                {streamingEvents.map((event, idx) => (
+                                  <div
+                                    key={event.id || idx}
+                                    className="flex items-center gap-2 text-sm animate-in fade-in duration-300"
+                                  >
+                                    {event.status === "running" && (
+                                      <>
+                                        <Loader2 className="w-3 h-3 animate-spin text-amber-500" />
+                                        <span className="font-mono text-xs text-amber-500">
+                                          {event.tool_name}()
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                          running...
+                                        </span>
+                                      </>
+                                    )}
+                                    {event.status === "completed" && (
+                                      <>
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-500 animate-in zoom-in duration-200" />
+                                        <span className="font-mono text-xs text-emerald-500">
+                                          {event.tool_name}()
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                          completed
+                                        </span>
+                                      </>
+                                    )}
+                                    {event.status === "error" && (
+                                      <>
+                                        <AlertTriangle className="w-3 h-3 text-red-500" />
+                                        <span className="font-mono text-xs text-red-500">
+                                          {event.tool_name}()
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                          error
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                         </div>
                       </div>
                     )}
@@ -454,11 +585,11 @@ function App() {
                       onChange={(e) => setInput(e.target.value)}
                       placeholder="Ask about operations, incidents, or team performance..."
                       className="bg-secondary/50 border-border/40"
-                      disabled={isLoading}
+                      disabled={isStreaming}
                     />
                     <Button
                       type="submit"
-                      disabled={isLoading}
+                      disabled={isStreaming}
                       className="gap-2"
                     >
                       <Send className="w-4 h-4" />
