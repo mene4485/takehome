@@ -18,51 +18,220 @@ from datetime import datetime
 from typing import AsyncGenerator
 from services.tools import TOOL_DEFINITIONS, TOOL_HANDLERS
 
-
 # Claude model to use (Sonnet 4.5 supports PTC with code_execution_20250825)
 CLAUDE_MODEL = "claude-sonnet-4-5-20250929"
+SYSTEM_PROMPT = """You are Mission Control, an AI operations assistant for Structured AI. 
 
-# Lazy initialization of Anthropic client
-_client = None
+                    Your role: Help analyze operational data efficiently and provide actionable insights.
+
+                    Guidelines:
+                    - Be concise and direct in responses
+                    - For data analysis questions, use code_execution to write Python code that processes data
+                    - When greeting users, briefly mention you can help with ops data (don't list all tools)
+                    - Focus on insights, not just raw data
+                    - Use formatting (bold, bullets) to make responses scannable
+
+                    Remember: You have access to tools for team data, projects, incidents, budgets, feedback, and deployments."""
+
 
 def get_client():
-    """Get or create Anthropic client with API key from environment."""
-    global _client
-    if _client is None:
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError(
-                "ANTHROPIC_API_KEY not found in environment. "
-                "Please add it to backend/.env file: ANTHROPIC_API_KEY=your_key_here"
-            )
-        _client = Anthropic(api_key=api_key)
-    return _client
+    """Create Anthropic client with API key from environment."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "ANTHROPIC_API_KEY not found in environment. "
+            "Please add it to backend/.env file: ANTHROPIC_API_KEY=your_key_here"
+        )
+    return Anthropic(api_key=api_key)
 
 
-def format_conversation_history(messages: list) -> list:
+
+async def chat_with_claude_streaming(
+    user_message: str, 
+    conversation_history: list = None
+) -> AsyncGenerator[dict, None]:
     """
-    Format database messages for Claude API.
+    Stream events during Claude conversation with PTC support.
+    
+    Yields events as they occur:
+    - thinking: Initial processing started
+    - code: Claude is writing Python code in container
+    - tool_call: Tool execution started (with running status)
+    - tool_result: Tool execution completed
+    - response: Final text answer
+    - error: Any error that occurred
     
     Args:
-        messages: List of message dicts from database with 'role' and 'content' fields
+        user_message: The user's message/question
+        conversation_history: Optional list of previous messages for context
         
-    Returns:
-        List formatted for Claude API with alternating user/assistant roles
+    Yields:
+        Dict events with type, content, timestamp, and other metadata
     """
-    formatted = []
-    
-    for msg in messages:
-        formatted.append({
-            "role": msg["role"],
-            "content": msg["content"]
+    try:
+        # Yield initial thinking event
+        yield {
+            "type": "thinking",
+            "content": "Analyzing your question...",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        # Initialize messages list with conversation history
+        messages = []
+        if conversation_history:
+            messages = list(conversation_history)  # Copy the already-formatted history
+        
+        # Add the new user message
+        messages.append({
+            "role": "user",
+            "content": user_message
         })
-    
-    # Claude API requires first message to be from user
-    # Filter out any leading assistant messages
-    while formatted and formatted[0]["role"] != "user":
-        formatted.pop(0)
-    
-    return formatted
+        
+        tool_calls_count = 0
+        max_iterations = 20
+        iteration = 0
+        current_container_id = None  # Container maintained only within this conversation loop
+        
+        # Conversation loop: continue until Claude returns text (no tool_use)
+        while iteration < max_iterations:
+            iteration += 1
+            
+            # Call Claude API with PTC enabled
+            client = get_client()
+            
+            # Prepare tools: add code_execution tool + custom tools with allowed_callers
+            tools = [
+                {
+                    "type": "code_execution_20250825",
+                    "name": "code_execution"
+                }
+            ] + TOOL_DEFINITIONS
+            
+            # Build API call parameters
+            api_params = {
+                "model": CLAUDE_MODEL,
+                "max_tokens": 4096,
+                "betas": ["advanced-tool-use-2025-11-20"],
+                "tools": tools,
+                "messages": messages,
+                "system": SYSTEM_PROMPT
+            }
+            
+            # Add container_id if we have one
+            if current_container_id:
+                api_params["container"] = current_container_id
+            
+            response = client.beta.messages.create(**api_params)
+            
+            # Extract container_id from response
+            if hasattr(response, 'container') and response.container:
+                if hasattr(response.container, 'id') and response.container.id:
+                    current_container_id = response.container.id
+            
+            # Get tool_use blocks (tool calls from Claude or its code)
+            tool_use_blocks = [block for block in response.content if block.type == "tool_use"]
+            
+            if not tool_use_blocks:
+                # No tool use - Claude returned final text response
+                break
+            
+            # Append Claude's response to conversation
+            messages.append({
+                "role": "assistant",
+                "content": response.content
+            })
+            
+            # Execute each tool call and yield events
+            tool_results = []
+            for block in tool_use_blocks:
+                tool_calls_count += 1
+                
+                # Yield tool call start event
+                yield {
+                    "type": "tool_call",
+                    "tool_name": block.name,
+                    "status": "running",
+                    "parameters": block.input,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
+                try:
+                    # Call the tool function
+                    tool_func = TOOL_HANDLERS.get(block.name)
+                    
+                    if not tool_func:
+                        result_content = f"Error: Unknown tool '{block.name}'"
+                    else:
+                        # Call the tool with provided parameters
+                        result = await tool_func(**block.input)
+                        # Convert result to JSON string for Claude
+                        result_content = json.dumps(result)
+                    
+                    # Yield tool completion event
+                    yield {
+                        "type": "tool_result",
+                        "tool_name": block.name,
+                        "status": "completed",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                    
+                    # Add successful result
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result_content
+                    })
+                    
+                except Exception as e:
+                    # Tool execution failed
+                    error_msg = f"Error executing {block.name}: {str(e)}"
+                    
+                    # Yield error status
+                    yield {
+                        "type": "tool_result",
+                        "tool_name": block.name,
+                        "status": "error",
+                        "error": str(e),
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                    
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": error_msg,
+                        "is_error": True
+                    })
+            
+            # Send tool results back to Claude
+            messages.append({
+                "role": "user",
+                "content": tool_results
+            })
+        
+        # Extract final text response from Claude
+        text_blocks = [block for block in response.content if block.type == "text"]
+        final_text = "".join([block.text for block in text_blocks])
+        
+        if not final_text:
+            final_text = "I processed your request but didn't generate a text response."
+        
+        # Yield final response event
+        yield {
+            "type": "response",
+            "content": final_text,
+            "tool_calls_count": tool_calls_count,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        # Yield error event
+        yield {
+            "type": "error",
+            "content": "I encountered an error processing your request.",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
 
 
 async def chat_with_claude(user_message: str, conversation_history: list = None) -> dict:
@@ -88,7 +257,7 @@ async def chat_with_claude(user_message: str, conversation_history: list = None)
         # Initialize messages list with conversation history
         messages = []
         if conversation_history:
-            messages = format_conversation_history(conversation_history)
+            messages = list(conversation_history)  # Copy the already-formatted history
             print(f"📚 Loaded {len(conversation_history)} previous messages for context")
         
         # Add the new user message
@@ -294,217 +463,3 @@ async def chat_with_claude(user_message: str, conversation_history: list = None)
             "error": str(e),
             "tool_calls": tool_calls_count if 'tool_calls_count' in locals() else 0
         }
-
-
-async def chat_with_claude_streaming(
-    user_message: str, 
-    conversation_history: list = None, 
-    container_id: str = None
-) -> AsyncGenerator[dict, None]:
-    """
-    Stream events during Claude conversation with PTC support.
-    
-    Yields events as they occur:
-    - thinking: Initial processing started
-    - code: Claude is writing Python code in container
-    - tool_call: Tool execution started (with running status)
-    - tool_result: Tool execution completed
-    - response: Final text answer
-    - error: Any error that occurred
-    
-    Args:
-        user_message: The user's message/question
-        conversation_history: Optional list of previous messages for context
-        container_id: Optional container_id for PTC state persistence
-        
-    Yields:
-        Dict events with type, content, timestamp, and other metadata
-    """
-    try:
-        # Yield initial thinking event
-        yield {
-            "type": "thinking",
-            "content": "Analyzing your question...",
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-        # Initialize messages list with conversation history
-        messages = []
-        if conversation_history:
-            messages = format_conversation_history(conversation_history)
-        
-        # Add the new user message
-        messages.append({
-            "role": "user",
-            "content": user_message
-        })
-        
-        tool_calls_count = 0
-        max_iterations = 20
-        iteration = 0
-        current_container_id = container_id
-        
-        # Conversation loop: continue until Claude returns text (no tool_use)
-        while iteration < max_iterations:
-            iteration += 1
-            
-            # Call Claude API with PTC enabled
-            client = get_client()
-            
-            # Prepare tools: add code_execution tool + custom tools with allowed_callers
-            tools = [
-                {
-                    "type": "code_execution_20250825",
-                    "name": "code_execution"
-                }
-            ] + TOOL_DEFINITIONS
-            
-            # Build API call parameters
-            api_params = {
-                "model": CLAUDE_MODEL,
-                "max_tokens": 4096,
-                "betas": ["advanced-tool-use-2025-11-20"],
-                "tools": tools,
-                "messages": messages,
-                "system": """You are Mission Control, an AI operations assistant for Structured AI. 
-
-Your role: Help analyze operational data efficiently and provide actionable insights.
-
-Guidelines:
-- Be concise and direct in responses
-- For data analysis questions, use code_execution to write Python code that processes data
-- When greeting users, briefly mention you can help with ops data (don't list all tools)
-- Focus on insights, not just raw data
-- Use formatting (bold, bullets) to make responses scannable
-
-Remember: You have access to tools for team data, projects, incidents, budgets, feedback, and deployments."""
-            }
-            
-            # Add container_id if we have one
-            if current_container_id:
-                api_params["container"] = current_container_id
-            
-            response = client.beta.messages.create(**api_params)
-            
-            # Extract container_id from response
-            if hasattr(response, 'container') and response.container:
-                if hasattr(response.container, 'id') and response.container.id:
-                    current_container_id = response.container.id
-            
-            # Check for server_tool_use blocks (code execution)
-            server_tool_uses = [block for block in response.content if hasattr(block, 'type') and block.type == 'server_tool_use']
-            
-            if server_tool_uses:
-                # Yield code execution event
-                yield {
-                    "type": "code",
-                    "content": "Writing code to process your request...",
-                    "language": "python",
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-            
-            # Get tool_use blocks (tool calls from Claude or its code)
-            tool_use_blocks = [block for block in response.content if block.type == "tool_use"]
-            
-            if not tool_use_blocks:
-                # No tool use - Claude returned final text response
-                break
-            
-            # Append Claude's response to conversation
-            messages.append({
-                "role": "assistant",
-                "content": response.content
-            })
-            
-            # Execute each tool call and yield events
-            tool_results = []
-            for block in tool_use_blocks:
-                tool_calls_count += 1
-                
-                # Yield tool call start event
-                yield {
-                    "type": "tool_call",
-                    "tool_name": block.name,
-                    "status": "running",
-                    "parameters": block.input,
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-                
-                try:
-                    # Call the tool function
-                    tool_func = TOOL_HANDLERS.get(block.name)
-                    
-                    if not tool_func:
-                        result_content = f"Error: Unknown tool '{block.name}'"
-                    else:
-                        # Call the tool with provided parameters
-                        result = await tool_func(**block.input)
-                        # Convert result to JSON string for Claude
-                        result_content = json.dumps(result)
-                    
-                    # Yield tool completion event
-                    yield {
-                        "type": "tool_result",
-                        "tool_name": block.name,
-                        "status": "completed",
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                    
-                    # Add successful result
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result_content
-                    })
-                    
-                except Exception as e:
-                    # Tool execution failed
-                    error_msg = f"Error executing {block.name}: {str(e)}"
-                    
-                    # Yield error status
-                    yield {
-                        "type": "tool_result",
-                        "tool_name": block.name,
-                        "status": "error",
-                        "error": str(e),
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                    
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": error_msg,
-                        "is_error": True
-                    })
-            
-            # Send tool results back to Claude
-            messages.append({
-                "role": "user",
-                "content": tool_results
-            })
-        
-        # Extract final text response from Claude
-        text_blocks = [block for block in response.content if block.type == "text"]
-        final_text = "".join([block.text for block in text_blocks])
-        
-        if not final_text:
-            final_text = "I processed your request but didn't generate a text response."
-        
-        # Yield final response event
-        yield {
-            "type": "response",
-            "content": final_text,
-            "tool_calls_count": tool_calls_count,
-            "container_id": current_container_id,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-    except Exception as e:
-        # Yield error event
-        yield {
-            "type": "error",
-            "content": "I encountered an error processing your request.",
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-
