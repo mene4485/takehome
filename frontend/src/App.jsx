@@ -49,7 +49,6 @@ function App() {
   const [streamingEvents, setStreamingEvents] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState(null);
-  const [containerIds, setContainerIds] = useState({});
 
   // Fetch initial stats and conversations
   useEffect(() => {
@@ -234,7 +233,6 @@ function App() {
         body: JSON.stringify({
           message: inputText,
           conversation_id: conversationId,
-          container_id: containerIds[conversationId] || null,
         }),
       });
 
@@ -266,8 +264,6 @@ function App() {
               // Handle different event types
               if (eventData.type === "thinking") {
                 setStreamingStatus("thinking");
-              } else if (eventData.type === "code") {
-                setStreamingStatus("writing_code");
               } else if (eventData.type === "tool_call") {
                 setStreamingEvents((prev) => [
                   ...prev,
@@ -291,14 +287,6 @@ function App() {
                   content: eventData.content,
                 };
                 setMessages((prev) => [...prev, assistantMessage]);
-
-                // Store container_id for reuse
-                if (eventData.container_id) {
-                  setContainerIds((prev) => ({
-                    ...prev,
-                    [conversationId]: eventData.container_id,
-                  }));
-                }
 
                 // Update conversation's updated_at
                 setConversations((prev) => {
@@ -493,15 +481,6 @@ function App() {
                             <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse">
                               <span>🤔</span>
                               <span>Analyzing your question...</span>
-                            </div>
-                          )}
-
-                          {streamingStatus === "writing_code" && (
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse mb-2">
-                              <span>📝</span>
-                              <span>
-                                Writing code to process your request...
-                              </span>
                             </div>
                           )}
 
