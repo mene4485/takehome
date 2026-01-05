@@ -9,7 +9,7 @@ You're goal is to utilize this new tool to build an AI Operations Assistant.
 
 ### 1. Implement Programmatic Tool Calling
 
-Connect the chat to Claude with PTC enabled. When Claude writes code that calls tools, route those calls to your backend and return results to the sandbox.
+Connect the chat to Claude with PTC enabled. When Claude writes code that calls tools in its secure environment, respond to those tool calls from your backend and return results back to Claude's code execution.
 
 See `backend/services/tools.py` for 3 starter tools with `allowed_callers` already configured.
 
@@ -18,6 +18,7 @@ See `backend/services/tools.py` for 3 starter tools with `allowed_callers` alrea
 ### 2. Real-Time Visualization
 
 Stream tool execution to the frontend. Users should see:
+
 - When Claude writes code vs calls tools directly
 - If Claude writes code we should see this code
 - Each tool call as it happens (not after completion)
@@ -39,13 +40,13 @@ The agent should handle follow-up questions correctly. If I ask "List P0 inciden
 
 Your agent should correctly answer all of these:
 
-| Question | Hints |
-|----------|-------|
-| "Which departments are over budget?" | Need budget data |
-| "What projects have declining customer satisfaction?" | Need feedback/NPS data |
-| "List engineers with unresolved P1+ incidents and their managers" | Correlate team + incidents |
-| "Which project has the worst incident-to-deployment ratio?" | Need deployment data |
-| "Create a summary of infrastructure issues this month" | Filter + aggregate incidents |
+| Question                                                          | Hints                        |
+| ----------------------------------------------------------------- | ---------------------------- |
+| "Which departments are over budget?"                              | Need budget data             |
+| "What projects have declining customer satisfaction?"             | Need feedback/NPS data       |
+| "List engineers with unresolved P1+ incidents and their managers" | Correlate team + incidents   |
+| "Which project has the worst incident-to-deployment ratio?"       | Need deployment data         |
+| "Create a summary of infrastructure issues this month"            | Filter + aggregate incidents |
 
 Look at `backend/data/mock_data.py` - there's data for budgets, customer feedback, and deployments that don't have tools yet. **You decide what tools to build.**
 

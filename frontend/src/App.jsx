@@ -220,21 +220,30 @@ function App() {
         }),
       });
 
-      // Generate and save mock assistant response
-      const mockResponse = {
-        role: "assistant",
-        content:
-          "I've received your message and saved it to the database! When Claude is integrated, I'll process your request. Try refreshing - your conversation persists! 🎉",
-      };
-
-      await fetch(`${apiUrl}/conversations/${conversationId}/messages`, {
+      // Call Claude AI via chat endpoint
+      const chatResponse = await fetch(`${apiUrl}/chat/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(mockResponse),
+        body: JSON.stringify({
+          message: inputText,
+          conversation_id: conversationId,
+        }),
       });
 
-      // Add assistant response to UI
-      setMessages((prev) => [...prev, mockResponse]);
+      if (!chatResponse.ok) {
+        throw new Error(`Chat API error: ${chatResponse.status}`);
+      }
+
+      const chatData = await chatResponse.json();
+
+      // Add Claude's response to UI
+      const assistantMessage = {
+        role: "assistant",
+        content: chatData.response,
+        id: chatData.message_id,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
 
       // Update conversation's updated_at by moving it to top of list
       setConversations((prev) => {
@@ -253,12 +262,20 @@ function App() {
       });
     } catch (err) {
       console.error("Failed to send message:", err);
+
+      // Provide more specific error message
+      let errorMessage =
+        "❌ Failed to send message. Please check that the backend server is running and try again.";
+      if (err.message.includes("Chat API error")) {
+        errorMessage =
+          "❌ Claude AI is temporarily unavailable. Please try again in a moment.";
+      }
+
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content:
-            "❌ Failed to send message. Please check that the backend server is running and try again.",
+          content: errorMessage,
         },
       ]);
     } finally {
@@ -401,8 +418,11 @@ function App() {
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center flex-shrink-0">
                           <Bot className="w-4 h-4 text-white" />
                         </div>
-                        <div className="bg-secondary rounded-lg px-4 py-3">
+                        <div className="bg-secondary rounded-lg px-4 py-3 flex items-center gap-2">
                           <Loader2 className="w-4 h-4 animate-spin" />
+                          <span className="text-sm text-muted-foreground">
+                            Claude is thinking...
+                          </span>
                         </div>
                       </div>
                     )}

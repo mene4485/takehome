@@ -34,6 +34,9 @@ dist/
 build/
 *.egg-info/
 
+# Debug/inspection scripts
+inspect_data.py
+
 # Node
 node_modules/
 dist/

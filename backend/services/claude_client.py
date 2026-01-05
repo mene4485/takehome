@@ -1,0 +1,284 @@
+"""
+Claude AI API client with Programmatic Tool Calling (PTC) support.
+
+This module orchestrates conversations with Claude, handling the PTC loop:
+1. Send user message with tool definitions (including custom tools with allowed_callers)
+2. Claude writes Python code and executes it in ITS secure environment
+3. When Claude's code calls our custom tools, we respond with tool results
+4. Repeat until Claude returns final text response
+
+With PTC, Claude can write and execute Python code that calls our tools,
+enabling complex multi-step reasoning and data processing.
+"""
+
+from anthropic import Anthropic
+import os
+import json
+from services.tools import TOOL_DEFINITIONS, TOOL_HANDLERS
+
+
+# Claude model to use (Sonnet 4.5 supports PTC with code_execution_20250825)
+CLAUDE_MODEL = "claude-sonnet-4-5-20250929"
+
+# Lazy initialization of Anthropic client
+_client = None
+
+def get_client():
+    """Get or create Anthropic client with API key from environment."""
+    global _client
+    if _client is None:
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY not found in environment. "
+                "Please add it to backend/.env file: ANTHROPIC_API_KEY=your_key_here"
+            )
+        _client = Anthropic(api_key=api_key)
+    return _client
+
+
+def format_conversation_history(messages: list) -> list:
+    """
+    Format database messages for Claude API.
+    
+    Args:
+        messages: List of message dicts from database with 'role' and 'content' fields
+        
+    Returns:
+        List formatted for Claude API with alternating user/assistant roles
+    """
+    formatted = []
+    
+    for msg in messages:
+        formatted.append({
+            "role": msg["role"],
+            "content": msg["content"]
+        })
+    
+    # Claude API requires first message to be from user
+    # Filter out any leading assistant messages
+    while formatted and formatted[0]["role"] != "user":
+        formatted.pop(0)
+    
+    return formatted
+
+
+async def chat_with_claude(user_message: str, conversation_history: list = None) -> dict:
+    """
+    Send a message to Claude and handle the full PTC conversation loop.
+    
+    Args:
+        user_message: The user's message/question
+        conversation_history: Optional list of previous messages for context
+        
+    Returns:
+        Dict with:
+            - response: Claude's final text response
+            - tool_calls: Number of tool/code executions performed
+            - conversation: Full message history including tool calls
+    """
+    try:
+        print("\n" + "="*80)
+        print("🚀 STARTING CLAUDE CONVERSATION")
+        print("="*80)
+        print(f"📝 User message: {user_message}")
+        
+        # Initialize messages list with conversation history
+        messages = []
+        if conversation_history:
+            messages = format_conversation_history(conversation_history)
+            print(f"📚 Loaded {len(conversation_history)} previous messages for context")
+        
+        # Add the new user message
+        messages.append({
+            "role": "user",
+            "content": user_message
+        })
+        
+        tool_calls_count = 0
+        max_iterations = 20  # Prevent infinite loops
+        iteration = 0
+        container_id = None  # Track container_id for PTC execution state
+        
+        print(f"🔄 Starting conversation loop (max {max_iterations} iterations)")
+        print("-"*80)
+        
+        # Conversation loop: continue until Claude returns text (no tool_use)
+        while iteration < max_iterations:
+            iteration += 1
+            print(f"\n🔁 Iteration {iteration}/{max_iterations}")
+            
+            # Call Claude API with PTC enabled
+            client = get_client()
+            
+            # Prepare tools: add code_execution tool + custom tools with allowed_callers
+            tools = [
+                {
+                    "type": "code_execution_20250825",
+                    "name": "code_execution"
+                }
+            ] + TOOL_DEFINITIONS
+            
+            print(f"📡 Calling Claude API (model: {CLAUDE_MODEL})...")
+            print(f"   Tools available: code_execution + {len(TOOL_DEFINITIONS)} custom tools")
+            if container_id:
+                print(f"   📦 Using container_id: {container_id}")
+            
+            # Build API call parameters
+            api_params = {
+                "model": CLAUDE_MODEL,
+                "max_tokens": 4096,
+                "betas": ["advanced-tool-use-2025-11-20"],
+                "tools": tools,
+                "messages": messages,
+                "system": "You are an AI assistant that helps analyze operational data. When answering questions that require data processing or multiple tool calls, write Python code using the code_execution tool to efficiently process data and compute results."
+            }
+            
+            # Add container_id if we have one (required for PTC state tracking)
+            if container_id:
+                api_params["container"] = container_id
+            
+            response = client.beta.messages.create(**api_params)
+            
+            print(f"✅ Received response from Claude (stop_reason: {response.stop_reason})")
+            
+            # Extract container_id from response.container.id
+            # This is critical for PTC - we need the container_id to maintain execution state
+            if hasattr(response, 'container') and response.container:
+                if hasattr(response.container, 'id') and response.container.id:
+                    if container_id != response.container.id:
+                        container_id = response.container.id
+                        print(f"   📦 Received container_id: {container_id}")
+            
+            # Check if there are server_tool_use blocks (PTC-specific)
+            server_tool_uses = [block for block in response.content if hasattr(block, 'type') and block.type == 'server_tool_use']
+            code_results = [block for block in response.content if hasattr(block, 'type') and block.type == 'code_execution_tool_result']
+            
+            if server_tool_uses:
+                print(f"   🔧 Detected {len(server_tool_uses)} server_tool_use block(s) (PTC active)")
+                # Log the code Claude is executing (for debugging)
+                for idx, block in enumerate(server_tool_uses, 1):
+                    if hasattr(block, 'input') and 'code' in block.input:
+                        code_preview = block.input['code'][:200] + "..." if len(block.input['code']) > 200 else block.input['code']
+                        print(f"   📝 Code block {idx}: {code_preview}")
+            
+            if code_results:
+                print(f"   ✅ Detected {len(code_results)} code_execution_tool_result block(s)")
+                for idx, block in enumerate(code_results, 1):
+                    if hasattr(block, 'content'):
+                        print(f"   📊 Code result {idx}: {str(block.content)[:200]}")
+            
+            # Determine which blocks to process:
+            # - With PTC (server_tool_use present): Claude executes code in ITS environment
+            #   We ONLY respond to the tool_use blocks (tool calls FROM Claude's code)
+            # - Without PTC: We process regular tool_use blocks
+            tool_use_blocks = [block for block in response.content if block.type == "tool_use"]
+            
+            if server_tool_uses:
+                print(f"   📝 PTC MODE: Claude is executing {len(server_tool_uses)} code block(s)")
+                print(f"   📞 Responding to {len(tool_use_blocks)} tool call(s) from Claude's code")
+            
+            if not tool_use_blocks:
+                # No tool use - Claude returned final text response
+                print("💬 Claude returned FINAL TEXT (no tool use) - exiting loop")
+                text_blocks = [block for block in response.content if block.type == "text"]
+                if text_blocks:
+                    preview = text_blocks[0].text[:100] + ("..." if len(text_blocks[0].text) > 100 else "")
+                    print(f"   Preview: {preview}")
+                break
+            
+            # Claude wants to use tools or execute code
+            print(f"\n🔧 Claude wants to use {len(tool_use_blocks)} tool(s)")
+            
+            # Append Claude's response to conversation
+            messages.append({
+                "role": "assistant",
+                "content": response.content
+            })
+            
+            # Execute each tool call (these are tool calls FROM Claude's code in PTC mode)
+            tool_results = []
+            for idx, block in enumerate(tool_use_blocks, 1):
+                tool_calls_count += 1
+                
+                print(f"\n   Tool {idx}/{len(tool_use_blocks)}: {block.name}({block.input})")
+                
+                try:
+                    # Call the tool function
+                    tool_func = TOOL_HANDLERS.get(block.name)
+                    
+                    if not tool_func:
+                        result_content = f"Error: Unknown tool '{block.name}'"
+                        print(f"   ❌ Error: Tool not found")
+                    else:
+                        # Call the tool with provided parameters
+                        result = await tool_func(**block.input)
+                        # Convert result to JSON string for Claude to parse in code execution
+                        result_content = json.dumps(result)
+                        print(f"   ✅ Tool result: {result_content[:100]}...")
+                    
+                    # Add successful result
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result_content
+                    })
+                    
+                except Exception as e:
+                    # Tool execution failed - send error to Claude
+                    error_msg = f"Error executing {block.name}: {str(e)}"
+                    print(f"   ❌ EXECUTION ERROR: {error_msg}")
+                    
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": error_msg,
+                        "is_error": True
+                    })
+            
+            # Send tool results back to Claude
+            print(f"\n📤 Sending {len(tool_results)} tool result(s) back to Claude...")
+            messages.append({
+                "role": "user",
+                "content": tool_results
+            })
+            print("   ↻ Looping back to get Claude's next response...")
+        
+        # Extract final text response from Claude
+        text_blocks = [block for block in response.content if block.type == "text"]
+        final_text = "".join([block.text for block in text_blocks])
+        
+        if not final_text:
+            final_text = "I processed your request but didn't generate a text response."
+        
+        print("\n" + "="*80)
+        print("✅ CONVERSATION COMPLETE")
+        print("="*80)
+        print(f"📊 Statistics:")
+        print(f"   - Total iterations: {iteration}")
+        print(f"   - Tool/code executions: {tool_calls_count}")
+        print(f"   - Final response length: {len(final_text)} characters")
+        print(f"   - Response preview: {final_text[:150]}...")
+        print("="*80 + "\n")
+        
+        return {
+            "response": final_text,
+            "tool_calls": tool_calls_count,
+            "conversation": messages
+        }
+        
+    except Exception as e:
+        # Handle API errors gracefully
+        print("\n" + "="*80)
+        print("❌ ERROR IN CONVERSATION")
+        print("="*80)
+        print(f"Error type: {type(e).__name__}")
+        print(f"Error message: {str(e)}")
+        print("="*80 + "\n")
+        
+        return {
+            "response": "I encountered an error processing your request. Please try again.",
+            "error": str(e),
+            "tool_calls": tool_calls_count if 'tool_calls_count' in locals() else 0
+        }
+
