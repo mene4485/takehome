@@ -37,6 +37,9 @@ build/
 # Debug/inspection scripts
 inspect_data.py
 
+# Tests
+backend/tests/test_*.py
+
 # Node
 node_modules/
 dist/
