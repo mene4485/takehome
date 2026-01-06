@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Card,
   CardContent,
@@ -458,9 +460,143 @@ function App() {
                               : "bg-secondary"
                           }`}
                         >
-                          <p className="text-sm whitespace-pre-wrap">
-                            {msg.content}
-                          </p>
+                          {msg.role === "user" ? (
+                            <p className="text-sm whitespace-pre-wrap">
+                              {msg.content}
+                            </p>
+                          ) : (
+                            <div className="text-sm prose prose-invert prose-sm max-w-none">
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  // Headers
+                                  h1: (props) => (
+                                    <h1
+                                      className="text-lg font-bold mt-4 mb-2 text-foreground"
+                                      {...props}
+                                    />
+                                  ),
+                                  h2: (props) => (
+                                    <h2
+                                      className="text-base font-bold mt-3 mb-2 text-foreground"
+                                      {...props}
+                                    />
+                                  ),
+                                  h3: (props) => (
+                                    <h3
+                                      className="text-sm font-bold mt-2 mb-1 text-foreground"
+                                      {...props}
+                                    />
+                                  ),
+                                  // Paragraphs
+                                  p: (props) => (
+                                    <p
+                                      className="mb-2 text-foreground leading-relaxed"
+                                      {...props}
+                                    />
+                                  ),
+                                  // Lists
+                                  ul: (props) => (
+                                    <ul
+                                      className="list-disc pl-4 mb-2 space-y-1"
+                                      {...props}
+                                    />
+                                  ),
+                                  ol: (props) => (
+                                    <ol
+                                      className="list-decimal pl-4 mb-2 space-y-1"
+                                      {...props}
+                                    />
+                                  ),
+                                  li: (props) => (
+                                    <li
+                                      className="text-foreground"
+                                      {...props}
+                                    />
+                                  ),
+                                  // Strong/Bold
+                                  strong: (props) => (
+                                    <strong
+                                      className="font-bold text-violet-400"
+                                      {...props}
+                                    />
+                                  ),
+                                  // Em/Italic
+                                  em: (props) => (
+                                    <em
+                                      className="italic text-foreground"
+                                      {...props}
+                                    />
+                                  ),
+                                  // Code
+                                  code: ({ inline, ...props }) =>
+                                    inline ? (
+                                      <code
+                                        className="bg-black/30 px-1.5 py-0.5 rounded text-amber-400 font-mono text-xs"
+                                        {...props}
+                                      />
+                                    ) : (
+                                      <code
+                                        className="block bg-black/30 p-3 rounded font-mono text-xs text-emerald-400 overflow-x-auto"
+                                        {...props}
+                                      />
+                                    ),
+                                  // Blockquote
+                                  blockquote: (props) => (
+                                    <blockquote
+                                      className="border-l-4 border-violet-500 pl-3 py-1 my-2 italic text-muted-foreground"
+                                      {...props}
+                                    />
+                                  ),
+                                  // Links
+                                  a: (props) => (
+                                    <a
+                                      className="text-violet-400 hover:text-violet-300 underline"
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      {...props}
+                                    />
+                                  ),
+                                  // Horizontal Rule
+                                  hr: (props) => (
+                                    <hr
+                                      className="my-4 border-border/40"
+                                      {...props}
+                                    />
+                                  ),
+                                  // Tables
+                                  table: (props) => (
+                                    <div className="overflow-x-auto my-2">
+                                      <table
+                                        className="min-w-full border border-border/40 text-xs"
+                                        {...props}
+                                      />
+                                    </div>
+                                  ),
+                                  thead: (props) => (
+                                    <thead
+                                      className="bg-secondary/50"
+                                      {...props}
+                                    />
+                                  ),
+                                  th: (props) => (
+                                    <th
+                                      className="border border-border/40 px-2 py-1 text-left font-bold"
+                                      {...props}
+                                    />
+                                  ),
+                                  td: (props) => (
+                                    <td
+                                      className="border border-border/40 px-2 py-1"
+                                      {...props}
+                                    />
+                                  ),
+                                }}
+                              >
+                                {msg.content}
+                              </ReactMarkdown>
+                            </div>
+                          )}
                         </div>
                         {msg.role === "user" && (
                           <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center flex-shrink-0">
