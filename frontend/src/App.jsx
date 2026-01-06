@@ -30,6 +30,9 @@ import {
   Sparkles,
   Trash2,
   Plus,
+  ChevronDown,
+  ChevronUp,
+  Bug,
 } from "lucide-react";
 
 const apiUrl = import.meta.env.VITE_API_URL;
@@ -51,6 +54,11 @@ function App() {
   const [streamingEvents, setStreamingEvents] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState(null);
+
+  // Debug panel state
+  const [debugData, setDebugData] = useState([]);
+  const [codeExecutions, setCodeExecutions] = useState([]);
+  const [isDebugOpen, setIsDebugOpen] = useState(false);
 
   // Fetch initial stats and conversations
   useEffect(() => {
@@ -188,6 +196,8 @@ function App() {
     setStreamingEvents([]);
     setStreamingStatus("thinking");
     setCodeExecution(null);
+    setDebugData([]); // Clear previous debug data
+    setCodeExecutions([]); // Clear previous code executions
 
     try {
       let conversationId = currentConversationId;
@@ -263,8 +273,26 @@ function App() {
             try {
               const eventData = JSON.parse(line.slice(6));
 
+              // Store raw event in debug data
+              setDebugData((prev) => [
+                ...prev,
+                {
+                  timestamp: new Date().toISOString(),
+                  event: eventData,
+                },
+              ]);
+
               // Handle different event types
-              if (eventData.type === "thinking") {
+              if (eventData.type === "code_execution") {
+                // Store code execution separately
+                setCodeExecutions((prev) => [
+                  ...prev,
+                  {
+                    timestamp: new Date().toISOString(),
+                    code: eventData.code,
+                  },
+                ]);
+              } else if (eventData.type === "thinking") {
                 setStreamingStatus("thinking");
               } else if (eventData.type === "tool_call") {
                 setStreamingEvents((prev) => [
@@ -712,6 +740,120 @@ function App() {
                   </div>
                 </form>
               </CardContent>
+            </Card>
+
+            {/* Debug Panel */}
+            <Card className="bg-card/50 backdrop-blur-sm border border-amber-500/30">
+              <CardHeader
+                className="pb-3 cursor-pointer hover:bg-secondary/20 transition-colors"
+                onClick={() => setIsDebugOpen(!isDebugOpen)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Bug className="w-5 h-5 text-amber-500" />
+                    <CardTitle className="text-lg">Debug Panel</CardTitle>
+                    <Badge variant="secondary" className="text-xs">
+                      {debugData.length} events
+                    </Badge>
+                  </div>
+                  <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                    {isDebugOpen ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+                <CardDescription>
+                  Raw backend response data for debugging
+                </CardDescription>
+              </CardHeader>
+              {isDebugOpen && (
+                <CardContent>
+                  <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                    {/* Code Executions Section */}
+                    {codeExecutions.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-violet-400 mb-2">
+                          <Code2 className="w-4 h-4" />
+                          <span>Python Code Executed by Claude</span>
+                          <Badge variant="secondary" className="text-xs">
+                            {codeExecutions.length}
+                          </Badge>
+                        </div>
+                        {codeExecutions.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="bg-black/40 rounded-lg p-4 border border-violet-500/30"
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge
+                                variant="outline"
+                                className="text-xs text-violet-400 border-violet-500/30"
+                              >
+                                Execution #{idx + 1}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(item.timestamp).toLocaleTimeString()}
+                              </span>
+                            </div>
+                            <pre className="text-xs font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap bg-black/30 rounded p-3">
+                              {item.code}
+                            </pre>
+                          </div>
+                        ))}
+                        <div className="border-t border-border/40 my-4" />
+                      </div>
+                    )}
+
+                    {/* All Events Section */}
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-amber-400 mb-2">
+                        <Terminal className="w-4 h-4" />
+                        <span>All Backend Events</span>
+                        <Badge variant="secondary" className="text-xs">
+                          {debugData.length}
+                        </Badge>
+                      </div>
+                      {debugData.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Terminal className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                          <p className="text-sm">No debug data yet</p>
+                          <p className="text-xs mt-1">
+                            Send a message to see backend events
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {debugData.map((item, idx) => (
+                            <div
+                              key={idx}
+                              className="bg-black/30 rounded-lg p-3 border border-amber-500/20"
+                            >
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs text-amber-400 border-amber-500/30"
+                                >
+                                  {item.event.type}
+                                </Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(
+                                    item.timestamp
+                                  ).toLocaleTimeString()}
+                                </span>
+                              </div>
+                              <pre className="text-xs font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap">
+                                {JSON.stringify(item.event, null, 2)}
+                              </pre>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              )}
             </Card>
           </div>
 

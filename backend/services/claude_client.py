@@ -128,6 +128,18 @@ async def chat_with_claude_streaming(
                 if hasattr(response.container, 'id') and response.container.id:
                     current_container_id = response.container.id
             
+            # Check for server_tool_use blocks (contains Python code execution)
+            server_tool_uses = [block for block in response.content if hasattr(block, 'type') and block.type == 'server_tool_use']
+            if server_tool_uses:
+                # Yield code execution events
+                for block in server_tool_uses:
+                    if hasattr(block, 'input') and 'code' in block.input:
+                        yield {
+                            "type": "code_execution",
+                            "code": block.input['code'],
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+            
             # Get tool_use blocks (tool calls from Claude or its code)
             tool_use_blocks = [block for block in response.content if block.type == "tool_use"]
             
