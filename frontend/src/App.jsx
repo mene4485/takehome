@@ -655,46 +655,84 @@ function App() {
                                   <Code2 className="w-3 h-3" />
                                   <span>Executing tools...</span>
                                 </div>
-                                {streamingEvents.map((event, idx) => (
-                                  <div
-                                    key={event.id || idx}
-                                    className="flex items-center gap-2 text-sm animate-in fade-in duration-300"
-                                  >
-                                    {event.status === "running" && (
-                                      <>
-                                        <Loader2 className="w-3 h-3 animate-spin text-amber-500" />
-                                        <span className="font-mono text-xs text-amber-500">
-                                          {event.tool_name}()
-                                        </span>
-                                        <span className="text-xs text-muted-foreground">
-                                          running...
-                                        </span>
-                                      </>
-                                    )}
-                                    {event.status === "completed" && (
-                                      <>
-                                        <CheckCircle2 className="w-3 h-3 text-emerald-500 animate-in zoom-in duration-200" />
-                                        <span className="font-mono text-xs text-emerald-500">
-                                          {event.tool_name}()
-                                        </span>
-                                        <span className="text-xs text-muted-foreground">
-                                          completed
-                                        </span>
-                                      </>
-                                    )}
-                                    {event.status === "error" && (
-                                      <>
-                                        <AlertTriangle className="w-3 h-3 text-red-500" />
-                                        <span className="font-mono text-xs text-red-500">
-                                          {event.tool_name}()
-                                        </span>
-                                        <span className="text-xs text-muted-foreground">
-                                          error
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                ))}
+                                {streamingEvents.map((event, idx) => {
+                                  // Format parameters for display
+                                  const paramsStr = event.parameters
+                                    ? Object.keys(event.parameters).length > 0
+                                      ? JSON.stringify(event.parameters)
+                                      : ""
+                                    : "";
+
+                                  return (
+                                    <div
+                                      key={event.id || idx}
+                                      className="animate-in fade-in duration-300"
+                                    >
+                                      <div className="flex items-center gap-2 text-sm">
+                                        {event.status === "running" && (
+                                          <>
+                                            <Loader2 className="w-3 h-3 animate-spin text-amber-500 flex-shrink-0" />
+                                            <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                                              <div className="flex items-center gap-1">
+                                                <span className="font-mono text-xs text-amber-500">
+                                                  {event.tool_name}()
+                                                </span>
+                                                <span className="text-xs text-muted-foreground">
+                                                  running...
+                                                </span>
+                                              </div>
+                                              {paramsStr && (
+                                                <span className="font-mono text-xs text-muted-foreground truncate">
+                                                  {paramsStr}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </>
+                                        )}
+                                        {event.status === "completed" && (
+                                          <>
+                                            <CheckCircle2 className="w-3 h-3 text-emerald-500 animate-in zoom-in duration-200 flex-shrink-0" />
+                                            <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                                              <div className="flex items-center gap-1">
+                                                <span className="font-mono text-xs text-emerald-500">
+                                                  {event.tool_name}()
+                                                </span>
+                                                <span className="text-xs text-muted-foreground">
+                                                  completed
+                                                </span>
+                                              </div>
+                                              {paramsStr && (
+                                                <span className="font-mono text-xs text-muted-foreground truncate">
+                                                  {paramsStr}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </>
+                                        )}
+                                        {event.status === "error" && (
+                                          <>
+                                            <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0" />
+                                            <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                                              <div className="flex items-center gap-1">
+                                                <span className="font-mono text-xs text-red-500">
+                                                  {event.tool_name}()
+                                                </span>
+                                                <span className="text-xs text-muted-foreground">
+                                                  error
+                                                </span>
+                                              </div>
+                                              {paramsStr && (
+                                                <span className="font-mono text-xs text-muted-foreground truncate">
+                                                  {paramsStr}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                         </div>
