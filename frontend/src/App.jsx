@@ -292,6 +292,16 @@ function App() {
                     code: eventData.code,
                   },
                 ]);
+                // Also add to streaming events for real-time display
+                setStreamingEvents((prev) => [
+                  ...prev,
+                  {
+                    ...eventData,
+                    id: `code-${Date.now()}`,
+                    status: "executing",
+                  },
+                ]);
+                setStreamingStatus("writing_code");
               } else if (eventData.type === "thinking") {
                 setStreamingStatus("thinking");
               } else if (eventData.type === "tool_call") {
@@ -648,14 +658,58 @@ function App() {
                             </div>
                           )}
 
-                          {streamingStatus === "calling_tools" &&
-                            streamingEvents.length > 0 && (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                                  <Code2 className="w-3 h-3" />
-                                  <span>Executing tools...</span>
-                                </div>
-                                {streamingEvents.map((event, idx) => {
+                          {/* Code execution section - show if there are any code events */}
+                          {streamingEvents.filter(
+                            (e) => e.type === "code_execution"
+                          ).length > 0 && (
+                            <div className="space-y-3 mb-4">
+                              <div className="flex items-center gap-2 text-xs text-violet-400 animate-pulse">
+                                <Code2 className="w-3 h-3" />
+                                <span className="font-semibold">
+                                  Claude wrote Python code
+                                </span>
+                              </div>
+                              {streamingEvents
+                                .filter((e) => e.type === "code_execution")
+                                .map((event, idx) => (
+                                  <div
+                                    key={event.id || idx}
+                                    className="bg-black/30 rounded p-3 border border-violet-500/30 animate-in fade-in duration-300"
+                                  >
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <Badge
+                                        variant="outline"
+                                        className="text-xs text-violet-400 border-violet-500/30"
+                                      >
+                                        Execution #{idx + 1}
+                                      </Badge>
+                                    </div>
+                                    <pre className="text-xs font-mono text-emerald-400 overflow-x-auto whitespace-pre-wrap max-h-[200px] overflow-y-auto">
+                                      {event.code}
+                                    </pre>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+
+                          {/* Tool calls section - show if there are any tool events */}
+                          {streamingEvents.filter(
+                            (e) => e.type !== "code_execution"
+                          ).length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2 text-xs text-amber-500">
+                                <Terminal className="w-3 h-3" />
+                                <span className="font-semibold">
+                                  {streamingEvents.filter(
+                                    (e) => e.type === "code_execution"
+                                  ).length > 0
+                                    ? "Code is calling tools"
+                                    : "Calling tools directly"}
+                                </span>
+                              </div>
+                              {streamingEvents
+                                .filter((e) => e.type !== "code_execution")
+                                .map((event, idx) => {
                                   // Format parameters for display
                                   const paramsStr = event.parameters
                                     ? Object.keys(event.parameters).length > 0
@@ -733,8 +787,8 @@ function App() {
                                     </div>
                                   );
                                 })}
-                              </div>
-                            )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
